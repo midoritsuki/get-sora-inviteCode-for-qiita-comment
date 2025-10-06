@@ -9,6 +9,14 @@
         #error { color: red; }
         .link-container { margin-top: 10px; }
         .info-text { font-size: 0.9em; color: #666; margin-top: 5px; }
+        .invite-code { 
+            display: inline; 
+        }
+        .copy-message {
+            color: green;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
     </style>
 </head>
 <body>
@@ -27,11 +35,6 @@
 
     <script>
         function extractItemId(qiitaUrl) {
-            /**
-             * Qiita記事URLからitem_idを抽出
-             * @param {string} qiitaUrl - Qiita記事のURL
-             * @returns {string} item_id（例: '9bf1d9bf90e583f8611d'）
-             */
             try {
                 const parsedUrl = new URL(qiitaUrl);
                 const pathParts = parsedUrl.href.split('/').filter(Boolean);
@@ -44,13 +47,12 @@
             }
         }
 
+        function extractInviteCode(text) {
+            const regex = /\b[A-Z0-9]{6}\b/g; // 大文字の英字と数字のみ
+            return text.match(regex) || [];
+        }
+
         async function fetchQiitaComments(qiitaUrl, accessToken) {
-            /**
-             * Qiita APIを使って記事のコメントを取得
-             * @param {string} qiitaUrl - Qiita記事のURL
-             * @param {string} accessToken - Qiitaアクセストークン（任意）
-             * @returns {Promise<Array>} コメントの配列
-             */
             const itemId = extractItemId(qiitaUrl);
             const apiUrl = `https://qiita.com/api/v2/items/${itemId}/comments`;
 
@@ -69,7 +71,6 @@
                     throw new Error(`APIエラー: ${response.status} - ${errorData.message || '不明なエラー'}`);
                 }
 
-                // レート制限情報の表示
                 const rateLimitRemaining = response.headers.get('x-ratelimit-remaining') || '不明';
                 const rateLimitReset = response.headers.get('x-ratelimit-reset');
                 console.log(`残りリクエスト数: ${rateLimitRemaining}`);
@@ -96,15 +97,25 @@
                 const comments = await fetchQiitaComments(url, accessToken);
 
                 if (comments.length > 0) {
-                    let output = `取得したコメント数: ${comments.length}\n`;
+                    let output = `取得したコメント数: ${comments.length}\n\n`;
+                    
                     comments.forEach((comment, index) => {
-                        output += `\n--- コメント ${index + 1} ---\n`;
-                        output += `ID: ${comment.id || 'N/A'}\n`;
+                        output += `--- コメント ${index + 1} ---\n`;
                         output += `投稿日時: ${comment.created_at || 'N/A'}\n`;
-                        output += `投稿者: ${comment.user?.name || 'Unknown'}\n`;
-                        output += `本文: ${comment.body.slice(0, 100)}...\n`; // 最初の100文字
+                        output += `本文: ${comment.body.slice(0, 100)}...\n`;
+                        
+                        // 招待コードの抽出と表示
+                        const codes = extractInviteCode(comment.body);
+                        if (codes.length > 0) {
+                            codes.forEach((code, codeIndex) => {
+                                const buttonId = `copy-button-${index}-${codeIndex}`;
+                                output += `招待コード: ${code} <span class="invite-code"><button id="${buttonId}" onclick="copyToClipboard('${code}', '${buttonId}')">コピー</button></span><span id="copy-message-${buttonId}" class="copy-message"></span>\n`;
+                            });
+                        }
+                        output += '\n';
                     });
-                    outputDiv.textContent = output;
+
+                    outputDiv.innerHTML = output;
                 } else {
                     outputDiv.textContent = 'コメントがありませんでした。';
                 }
@@ -112,6 +123,13 @@
                 errorDiv.textContent = error.message;
                 outputDiv.textContent = '';
             }
+        }
+
+        function copyToClipboard(code, buttonId) {
+            navigator.clipboard.writeText(code).then(() => {
+                const messageSpan = document.getElementById(`copy-message-${buttonId}`);
+                messageSpan.textContent = `クリップボードに ${code} をコピーしました`;
+            });
         }
     </script>
 </body>
