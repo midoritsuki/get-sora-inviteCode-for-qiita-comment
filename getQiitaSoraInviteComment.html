@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Qiitaコメント取得</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #output { margin-top: 20px; white-space: pre-wrap; }
+        #error { color: red; }
+        .link-container { margin-top: 10px; }
+        .info-text { font-size: 0.9em; color: #666; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Qiita記事のコメント取得</h1>
+    <label for="accessToken">Qiitaアクセストークン:</label>
+    <input type="text" id="accessToken" placeholder="トークンを入力" style="width: 300px;">
+    <div class="info-text">
+        トークンなしでも利用可能ですが、制限が厳しく1時間あたり60リクエストまでです。トークン入力で1000リクエスト/時間に緩和されます。
+    </div>
+    <button onclick="fetchComments()">コメントを取得</button>
+    <div class="link-container">
+        <a href="https://qiita.com/maiamea/items/680cca06f7825595cba0" target="_blank">アクセストークンの取得方法</a>
+    </div>
+    <div id="output"></div>
+    <div id="error"></div>
+
+    <script>
+        function extractItemId(qiitaUrl) {
+            /**
+             * Qiita記事URLからitem_idを抽出
+             * @param {string} qiitaUrl - Qiita記事のURL
+             * @returns {string} item_id（例: '9bf1d9bf90e583f8611d'）
+             */
+            try {
+                const parsedUrl = new URL(qiitaUrl);
+                const pathParts = parsedUrl.href.split('/').filter(Boolean);
+                if (pathParts[1] === 'qiita.com' && pathParts[3] === 'items') {
+                    return pathParts[4];
+                }
+                throw new Error('無効なQiita URLです。');
+            } catch (error) {
+                throw new Error(`URL解析エラー: ${error.message}`);
+            }
+        }
+
+        async function fetchQiitaComments(qiitaUrl, accessToken) {
+            /**
+             * Qiita APIを使って記事のコメントを取得
+             * @param {string} qiitaUrl - Qiita記事のURL
+             * @param {string} accessToken - Qiitaアクセストークン（任意）
+             * @returns {Promise<Array>} コメントの配列
+             */
+            const itemId = extractItemId(qiitaUrl);
+            const apiUrl = `https://qiita.com/api/v2/items/${itemId}/comments`;
+
+            try {
+                const headers = accessToken 
+                    ? { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+                    : { 'Content-Type': 'application/json' };
+
+                const response = await fetch(apiUrl, { headers });
+
+                if (!response.ok) {
+                    if (response.status === 429) {
+                        throw new Error('レート制限超過。後で再試行してください。');
+                    }
+                    const errorData = await response.json();
+                    throw new Error(`APIエラー: ${response.status} - ${errorData.message || '不明なエラー'}`);
+                }
+
+                // レート制限情報の表示
+                const rateLimitRemaining = response.headers.get('x-ratelimit-remaining') || '不明';
+                const rateLimitReset = response.headers.get('x-ratelimit-reset');
+                console.log(`残りリクエスト数: ${rateLimitRemaining}`);
+                if (rateLimitReset) {
+                    console.log(`リセット時刻: ${new Date(rateLimitReset * 1000).toLocaleString('ja-JP')}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                throw new Error(`リクエストエラー: ${error.message}`);
+            }
+        }
+
+        async function fetchComments() {
+            const url = 'https://qiita.com/7mpy/items/9bf1d9bf90e583f8611d';
+            const accessToken = document.getElementById('accessToken').value;
+            const outputDiv = document.getElementById('output');
+            const errorDiv = document.getElementById('error');
+
+            outputDiv.textContent = '取得中...';
+            errorDiv.textContent = '';
+
+            try {
+                const comments = await fetchQiitaComments(url, accessToken);
+
+                if (comments.length > 0) {
+                    let output = `取得したコメント数: ${comments.length}\n`;
+                    comments.forEach((comment, index) => {
+                        output += `\n--- コメント ${index + 1} ---\n`;
+                        output += `ID: ${comment.id || 'N/A'}\n`;
+                        output += `投稿日時: ${comment.created_at || 'N/A'}\n`;
+                        output += `投稿者: ${comment.user?.name || 'Unknown'}\n`;
+                        output += `本文: ${comment.body.slice(0, 100)}...\n`; // 最初の100文字
+                    });
+                    outputDiv.textContent = output;
+                } else {
+                    outputDiv.textContent = 'コメントがありませんでした。';
+                }
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                outputDiv.textContent = '';
+            }
+        }
+    </script>
+</body>
+</html>
